@@ -8,7 +8,6 @@ import {
     full,
     Tensor,
 } from '@huggingface/transformers';
-import { skip } from 'rxjs';
 
 declare global {
     interface Navigator {
