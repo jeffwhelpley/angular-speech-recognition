@@ -15,6 +15,9 @@ declare global {
     }
 }
 
+// (typeof window.WebAssembly === 'object') if browser has WASM support (which is needed for many models)
+// navigator.deviceMemory tells you RAM in GB
+
 const IS_WEBGPU_AVAILABLE = !!navigator.gpu;
 const MAX_NEW_TOKENS = 64;
 const WHISPER_SAMPLING_RATE = 16_000;
