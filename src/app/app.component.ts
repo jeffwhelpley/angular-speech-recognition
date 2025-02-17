@@ -12,17 +12,29 @@ import {
 declare global {
     interface Navigator {
         readonly gpu: any;
+        readonly deviceMemory: any;
     }
 }
 
-// (typeof window.WebAssembly === 'object') if browser has WASM support (which is needed for many models)
-// navigator.deviceMemory tells you RAM in GB
-
-const IS_WEBGPU_AVAILABLE = !!navigator.gpu;
-const MAX_NEW_TOKENS = 64;
-const WHISPER_SAMPLING_RATE = 16_000;
-const MAX_AUDIO_LENGTH = 30; // seconds
-const MAX_SAMPLES = WHISPER_SAMPLING_RATE * MAX_AUDIO_LENGTH;
+/**
+ * TODOs:
+ *
+ * 1. Get openai/whisper-base working (i.e. to see the diff of two models)
+ * 2. Create docs with detailed info about how each line of code works
+ * 3. Create streaming version where translations on continuous basis
+ * 4. Componentize and clean up code so super easy to understand/use
+ *          - Adapter/utility for dealing with audio streaming
+ *          - Adapter for HuggingFace Transformers (and each model?)
+ * 5. Also get HuggingFace model working running on CloudFlare
+ *
+ * ** Important: become expert in implementing HuggingFace model **
+ *
+ * Later stuff:
+ *      - Connect transcribed text to one of the other models (like Chrome Built in)
+ *      - Training models in browser and on server to customize base models
+ *      - Using other cloud services and how to decide where/how to run your models
+ *      - Ultimate Web App AI Architecture
+ */
 
 @Component({
     selector: 'app-root',
@@ -38,10 +50,16 @@ export class AppComponent {
     mediaRecorder: MediaRecorder | null = null;
 
     constructor() {
-        console.log(`IS_WEBGPU_AVAILABLE=${IS_WEBGPU_AVAILABLE}`);
+        console.log(`isWebGpuEnabled=${!!navigator.gpu}`);
+        console.log(`isWasmCapable=${typeof window.WebAssembly === 'object'}`);
+        console.log(`deviceMemory=${navigator.deviceMemory}`);
     }
 
     async startRecording() {
+        const WHISPER_SAMPLING_RATE = 16_000;
+        const MAX_AUDIO_LENGTH = 30; // seconds
+        const MAX_SAMPLES = WHISPER_SAMPLING_RATE * MAX_AUDIO_LENGTH;
+
         const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const audioContext = new AudioContext({ sampleRate: WHISPER_SAMPLING_RATE });
         const audioChunks: Blob[] = [];
@@ -68,86 +86,86 @@ export class AppComponent {
                 }
 
                 /*************************************** Start with onnx-community/whisper-base *******************************/
-                const modelName = 'onnx-community/whisper-base';
+                // const modelName = 'onnx-community/whisper-base';
 
-                const initializationOne = Date.now();
-                console.log(`Initializing tokenizer...`);
-                const tokenizer = await AutoTokenizer.from_pretrained(modelName, {});
-                const initializationTwo = Date.now();
-                console.log(`Initializing tokenizer...done...now processor...`);
-                const processor = await AutoProcessor.from_pretrained(modelName, {});
-                const initializationThree = Date.now();
-                console.log(`Initializing tokenizer...done...now processor...done...now model...`);
-                const model = await WhisperForConditionalGeneration.from_pretrained(modelName, {
-                    dtype: {
-                        encoder_model: 'fp32', // 'fp16' works too
-                        decoder_model_merged: 'fp32', // or 'q4' 'fp32' ('fp16' is broken)
-                    },
-                    device: 'webgpu',
-                });
-                const initializationFour = Date.now();
-                console.log(`
-                    Tokenizer: ${initializationTwo - initializationOne}ms
-                    Processor: ${initializationThree - initializationTwo}ms
-                    Model: ${initializationFour - initializationThree}ms
-                `);
+                // const initializationOne = Date.now();
+                // console.log(`Initializing tokenizer...`);
+                // const tokenizer = await AutoTokenizer.from_pretrained(modelName, {});
+                // const initializationTwo = Date.now();
+                // console.log(`Initializing tokenizer...done...now processor...`);
+                // const processor = await AutoProcessor.from_pretrained(modelName, {});
+                // const initializationThree = Date.now();
+                // console.log(`Initializing tokenizer...done...now processor...done...now model...`);
+                // const model = await WhisperForConditionalGeneration.from_pretrained(modelName, {
+                //     dtype: {
+                //         encoder_model: 'fp32', // 'fp16' works too
+                //         decoder_model_merged: 'fp32', // or 'q4' 'fp32' ('fp16' is broken)
+                //     },
+                //     device: 'webgpu',
+                // });
+                // const initializationFour = Date.now();
+                // console.log(`
+                //     Tokenizer: ${initializationTwo - initializationOne}ms
+                //     Processor: ${initializationThree - initializationTwo}ms
+                //     Model: ${initializationFour - initializationThree}ms
+                // `);
 
-                let startTime: DOMHighResTimeStamp;
-                let numTokens = 0;
+                // let startTime: DOMHighResTimeStamp;
+                // let numTokens = 0;
 
-                const streamer = new TextStreamer(tokenizer, {
-                    skip_prompt: true,
-                    skip_special_tokens: true,
-                    callback_function: (output) => {
-                        startTime = startTime || performance.now();
+                // const streamer = new TextStreamer(tokenizer, {
+                //     skip_prompt: true,
+                //     skip_special_tokens: true,
+                //     callback_function: (output) => {
+                //         startTime = startTime || performance.now();
 
-                        let tps;
-                        if (numTokens++ > 0) {
-                            tps = (numTokens / (performance.now() - startTime)) * 1000;
-                        }
-                    },
-                });
+                //         let tps;
+                //         if (numTokens++ > 0) {
+                //             tps = (numTokens / (performance.now() - startTime)) * 1000;
+                //         }
+                //     },
+                // });
 
-                console.log(`Running processor...`);
-                const processorStartTime = Date.now();
-                const inputs = await processor(audio);
-                const processorEndTime = Date.now();
-                console.log(`Running processor...done in ${processorEndTime - processorStartTime}ms`);
-
-                console.log(`Running model...`);
-                const modelStartTime = Date.now();
-                const outputs = (await model.generate({
-                    ...inputs,
-                    max_new_tokens: MAX_NEW_TOKENS,
-                    language: 'en',
-                    streamer,
-                })) as Tensor;
-                const modelEndTime = Date.now();
-                console.log(`Running model...done in ${modelEndTime - modelStartTime}ms`);
-
-                console.log(`Running tokenizer...`);
-                const tokenizerStartTime = Date.now();
-                const outputText = tokenizer.batch_decode(outputs, { skip_special_tokens: true });
-                const tokenizerEndTime = Date.now();
-                console.log(`Running tokenizer...done in ${tokenizerEndTime - tokenizerStartTime}ms`);
-
-                const processingEndTime = Date.now();
-                const elapsed = processingEndTime - processingStartTime;
-                console.log(`DONE in ${elapsed}ms outputText=${outputText}`);
-
-                /*************************************** Start with openai/whisper-base *******************************/
-                // const modelName = 'openai/whisper-base';
-                // const processor = await WhisperProcessor.from_pretrained(modelName, {});
-                // const model = await WhisperForConditionalGeneration.from_pretrained(modelName, {});
-
-                // // model.config['forced_decoder_ids'] = None;
-
+                // console.log(`Running processor...`);
+                // const processorStartTime = Date.now();
                 // const inputs = await processor(audio);
-                // const outputs = (await model.generate(inputs)) as Tensor;
-                // const outputText = processor.batch_decode(outputs, { skip_special_tokens: true });
+                // const processorEndTime = Date.now();
+                // console.log(`Running processor...done in ${processorEndTime - processorStartTime}ms`);
+
+                // console.log(`Running model...`);
+                // const modelStartTime = Date.now();
+                // const outputs = (await model.generate({
+                //     ...inputs,
+                //     max_new_tokens: 64, // why is this??
+                //     language: 'en',
+                //     streamer,
+                // })) as Tensor;
+                // const modelEndTime = Date.now();
+                // console.log(`Running model...done in ${modelEndTime - modelStartTime}ms`);
+
+                // console.log(`Running tokenizer...`);
+                // const tokenizerStartTime = Date.now();
+                // const outputText = tokenizer.batch_decode(outputs, { skip_special_tokens: true });
+                // const tokenizerEndTime = Date.now();
+                // console.log(`Running tokenizer...done in ${tokenizerEndTime - tokenizerStartTime}ms`);
+
                 // const processingEndTime = Date.now();
                 // const elapsed = processingEndTime - processingStartTime;
                 // console.log(`DONE in ${elapsed}ms outputText=${outputText}`);
+
+                /*************************************** Start with openai/whisper-base *******************************/
+                const modelName = 'openai/whisper-base';
+                const processor = await WhisperProcessor.from_pretrained(modelName, {});
+                const model = await WhisperForConditionalGeneration.from_pretrained(modelName, {});
+
+                // model.config['forced_decoder_ids'] = None;
+
+                const inputs = await processor(audio);
+                const outputs = (await model.generate(inputs)) as Tensor;
+                const outputText = processor.batch_decode(outputs, { skip_special_tokens: true });
+                const processingEndTime = Date.now();
+                const elapsed = processingEndTime - processingStartTime;
+                console.log(`DONE in ${elapsed}ms outputText=${outputText}`);
             };
 
             const audioBlob = new Blob(audioChunks, { type: mr.mimeType });
