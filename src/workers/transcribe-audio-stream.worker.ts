@@ -16,7 +16,7 @@ const MODEL_NAME = 'onnx-community/whisper-base'; // best model for the web I've
 const MODEL_DEVICE = 'webgpu';
 const MODEL_FORMAT = 'fp32'; // single-precision floating-point 32-bit format
 const TARGET_LANGUAGE = 'en'; // english
-const MAX_OUTPUT_WORDS = 64;
+const MAX_OUTPUT_TOKENS = 64;
 
 // buffer audio chunks as they come in to the web worker
 let audioChunkBuffer = new Float32Array(0);
@@ -144,7 +144,7 @@ async function processAudioChunk(audioChunk?: Float32Array) {
 
     const modelGenerationConfig: any = {
         ...inputs,
-        max_new_tokens: MAX_OUTPUT_WORDS, // can be small because we only process 2 seconds of audio at a time
+        max_new_tokens: MAX_OUTPUT_TOKENS, // can be small because we only process 2 seconds of audio at a time
         language: TARGET_LANGUAGE,
         streamer: new TextStreamer(tokenizer, {
             skip_prompt: true,
