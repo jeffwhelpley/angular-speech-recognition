@@ -1,74 +1,83 @@
-const DEFAULT_SAMPLE_RATE = 16_000; // 16,000 Hz (16 kHz); number of audio samples captured per second
-const DEFAULT_TIMESLICE = 500; // 500ms time interval for when data emitted to ondatavailable event
+const DEFAULT_SAMPLE_RATE = 16_000; // 16,000 Hz (i.e. 16 kHz); number of audio samples captured per second
 
 class UserMediaAdapter {
     mediaStream: MediaStream | null = null;
     audioContext: AudioContext | null = null;
-    mediaRecorder: MediaRecorder | null = null;
     isMicrophoneAudioCaptureActive = false;
 
-    async startMicrophoneAudioCapture({
-        sampleRate = DEFAULT_SAMPLE_RATE,
-        timeslice = DEFAULT_TIMESLICE,
-        audioChunkCallback,
-    }: MicrophoneAudioCaptureConfig) {
-        if (this.isMicrophoneAudioCaptureActive) {
-            return;
-        }
-
+    /**
+     * This will start audio streaming from the user's microphone to the audioChunkCallback function
+     */
+    async startMicrophoneAudioCapture({ sampleRate = DEFAULT_SAMPLE_RATE, audioChunkCallback }: MicrophoneAudioCaptureConfig) {
+        // make sure we only have one active audio capture at a time
+        if (this.isMicrophoneAudioCaptureActive) return;
         this.isMicrophoneAudioCaptureActive = true;
 
         try {
+            // this will prompt the user to get permission to their microphone; error thrown if they don't allow it
             this.mediaStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+
+            // Create AudioContext which manages the streaming audio data
             this.audioContext = new AudioContext({ sampleRate });
-            this.mediaRecorder = new MediaRecorder(this.mediaStream);
-            this.mediaRecorder.ondataavailable = this.getRawAudioBlobHandler(audioChunkCallback);
-            this.mediaRecorder.start(timeslice);
+
+            // We will use an AudioWorklet to process the audio data in real-time
+            await this.audioContext.audioWorklet.addModule(this.getWorkletUrl());
+            const audioProcessor = new AudioWorkletNode(this.audioContext, 'audio-processor');
+            audioProcessor.port.onmessage = (event) => audioChunkCallback(event.data);
+
+            // Connect the microphone audio stream to the AudioWorkletNode
+            const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+            source.connect(audioProcessor);
         } catch (ex) {
-            console.error(ex); // TODO: better error handling if using this code in production
+            console.error(ex);
             this.stopMicrophoneAudioCapture();
         }
     }
 
-    getRawAudioBlobHandler(audioChunkCallback: AudioChunkCallback) {
-        return async (event: BlobEvent) => {
-            if (!event?.data?.size) {
-                return; // no need to do anything if no data
-            }
-
-            if (!this.audioContext) {
-                console.error('Cannot process audio data without an AudioContext. Stop the capture and try again.');
-                return;
-            }
-
-            try {
-                const arrayBuffer = await event.data.arrayBuffer(); // Blob to ArrayBuffer (binary data)
-                const decoded = await this.audioContext.decodeAudioData(arrayBuffer); // ArrayBuffer to AudioBuffer (from Web Audio API)
-                const newAudio = decoded.getChannelData(0); // AudioBuffer to Float32Array (audio samples)
-
-                audioChunkCallback(newAudio);
-            } catch (ex) {
-                console.error(ex); // TODO: better error handling if using this code in production
-            }
-        };
-    }
-
+    /**
+     * Stop the audio streaming from the user's microphone and destroy the AudioContext
+     */
     stopMicrophoneAudioCapture() {
         try {
-            this.mediaRecorder?.stop();
+            this.audioContext?.close();
             this.mediaStream?.getTracks().forEach((track) => track.stop());
         } catch (ex) {
             console.error(ex); // TODO: better error handling if using this code in production
         } finally {
-            this.mediaRecorder = null;
-            this.mediaStream = null;
             this.audioContext = null;
+            this.mediaStream = null;
             this.isMicrophoneAudioCaptureActive = false;
         }
+    }
+
+    /**
+     * This needs to be in a separate URL or as a string like this in order to run as a Worklet.
+     * I couldn't get it working as a separate URL with the Angular build system.
+     */
+    private getWorkletUrl() {
+        const workletCode = `
+            class AudioProcessor extends AudioWorkletProcessor {
+                process(inputs, outputs, parameters) {
+                    const input = inputs[0];
+                    if (input.length > 0) {
+                        const channelData = input[0]; // Float32Array of audio samples
+                        this.port.postMessage(channelData);
+                    }
+                    return true; // Keep processor running
+                }
+            }
+            registerProcessor('audio-processor', AudioProcessor);
+        `;
+
+        // Create a Blob and convert it to a URL
+        const blob = new Blob([workletCode], { type: 'application/javascript' });
+        return URL.createObjectURL(blob);
     }
 }
 
 export const userMediaAdapter = new UserMediaAdapter();
+
+// ***** models for this adapter below *****
 
 interface MicrophoneAudioCaptureConfig {
     sampleRate?: number;

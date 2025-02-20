@@ -7,16 +7,16 @@ import {
     PreTrainedTokenizer,
     Processor,
     PreTrainedModel,
-    DataArray,
 } from '@huggingface/transformers';
 
 const AUDIO_SAMPLING_RATE = 16_000; // 16,000 Hz (16 kHz); number of audio samples captured per second
 const AUDIO_PROCESSING_TIME = 2000; // 2 seconds
-const OVERLAP_TIME = 500; // 500ms overlap between iterations of processing
+const OVERLAP_TIME = 200; // 200ms overlap between iterations of processing
 const MODEL_NAME = 'onnx-community/whisper-base'; // best model for the web I've found so far
 const MODEL_DEVICE = 'webgpu';
-const MODEL_FORMAT = 'fp32'; // single-precision floating-point format
+const MODEL_FORMAT = 'fp32'; // single-precision floating-point 32-bit format
 const TARGET_LANGUAGE = 'en'; // english
+const MAX_OUTPUT_WORDS = 64;
 
 // buffer audio chunks as they come in to the web worker
 let audioChunkBuffer = new Float32Array(0);
@@ -27,9 +27,6 @@ let processor: Processor | null = null;
 let tokenizer: PreTrainedTokenizer | null = null;
 let model: PreTrainedModel | null = null;
 
-// Used while processing audio chunks to keep track of previous output tokens and the audio chunk buffer
-let previousOutputTokens: DataArray = [];
-
 // inbound event handler from the main thread to this worker process
 addEventListener('message', (event) => {
     const eventData: InboundEventData = event.data || {};
@@ -38,7 +35,7 @@ addEventListener('message', (event) => {
         initializeModel();
     } else if (eventData.type === InboundEventDataType.AUDIO) {
         audioChunkBuffer = concatenateFloat32Arrays(audioChunkBuffer, eventData.audioChunk);
-    } else if (eventData.type === InboundEventDataType.DESTROY) {
+    } else if (eventData.type === InboundEventDataType.STOP) {
         isWorkerRunning = false;
     } else if (eventData.type === InboundEventDataType.LOG) {
         console.log(eventData.text);
@@ -104,8 +101,8 @@ async function initializeModel() {
  * audio to process and then sending that chunk off to the processAudioChunk function.
  */
 async function runAudioProcessorDaemon() {
-    const audioProcessingLength = AUDIO_SAMPLING_RATE * AUDIO_PROCESSING_TIME;
-    const audioOverlapLength = AUDIO_SAMPLING_RATE * OVERLAP_TIME;
+    const audioProcessingLength = AUDIO_SAMPLING_RATE * (AUDIO_PROCESSING_TIME / 1000);
+    const audioOverlapLength = AUDIO_SAMPLING_RATE * (OVERLAP_TIME / 1000);
 
     while (isWorkerRunning) {
         if (audioChunkBuffer.length >= audioProcessingLength) {
@@ -140,43 +137,28 @@ async function processAudioChunk(audioChunk?: Float32Array) {
         return;
     }
 
-    // const MAX_AUDIO_LENGTH = 30; // seconds
-    // const MAX_SAMPLES = WHISPER_SAMPLING_RATE * MAX_AUDIO_LENGTH;
-    // Pad with zeros if shorter than MAX_SAMPLES...why?
-    // if (audioChunk.length < MAX_SAMPLES) {
-    //     const padding = new Float32Array(MAX_SAMPLES - audioChunk.length);
-    //     audioChunk = new Float32Array([...padding, ...audioChunk]); // Prepend padding
-    // } else if (audioChunk.length > MAX_SAMPLES) {
-    //     audioChunk = audioChunk.slice(-MAX_SAMPLES); // still get the last MAX_SAMPLES
-    // }
-
+    // audio proprocessing which includes:
+    //      - feature extraction: converting raw audio into log-Mel spectrogram
+    //      - normalization: scaling the audio features to a specific range
     const inputs = await processor(audioChunk);
 
-    const streamer = new TextStreamer(tokenizer, {
-        skip_prompt: true,
-        skip_special_tokens: true,
-    });
-
-    // Add decoder_input_ids for continuous transcription
-    const generationConfig: any = {
+    const modelGenerationConfig: any = {
         ...inputs,
-        max_new_tokens: 64, // Why not?
+        max_new_tokens: MAX_OUTPUT_WORDS, // can be small because we only process 2 seconds of audio at a time
         language: TARGET_LANGUAGE,
-        streamer,
+        streamer: new TextStreamer(tokenizer, {
+            skip_prompt: true,
+            skip_special_tokens: true,
+        }),
     };
 
-    if (previousOutputTokens.length > 0) {
-        generationConfig.decoder_input_ids = new Tensor(
-            'int64',
-            [].concat(...previousOutputTokens), // Flatten the previous tokens
-            [1, previousOutputTokens.length]
-        );
-    }
+    // model generates output tokens based on the input tokens (NOTE: tokens !== words)
+    const outputs = (await model.generate(modelGenerationConfig)) as Tensor;
 
-    const outputs = (await model.generate(generationConfig)) as Tensor;
+    // finally we need the tokenizer to conver the tokens to actual english words
     const outputText = tokenizer.batch_decode(outputs, { skip_special_tokens: true })[0];
-    previousOutputTokens = outputs.data.slice(); // Important: Update previousOutputTokens
 
+    // return the transcribed text to the main thread
     postOutboundEvent({ type: OutboundEventDataType.TRANSCRIPTION, text: outputText });
 }
 
@@ -192,6 +174,8 @@ enum InboundEventDataType {
     AUDIO = 'audio',
     INIT = 'init',
     DESTROY = 'destroy',
+    STOP = 'stop',
+    START = 'start',
     LOG = 'log',
 }
 
