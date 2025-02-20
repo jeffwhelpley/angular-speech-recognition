@@ -1,2 +1,2 @@
-export * from './microphone.adapter';
-export * from './transformers.adapter';
+export * from './browser.adapter';
+export * from './user-media.adapter';
