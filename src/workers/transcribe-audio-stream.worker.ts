@@ -190,3 +190,14 @@ enum OutboundEventDataType {
     READY = 'ready',
     ERROR = 'error',
 }
+
+/**
+ * TODOs:
+ *
+ * - Cache models with IndexDB (use navigator.storage.estimate() to get storage estimate)
+ * - Download models from Cloudflare instead of HuggingFace
+ * - Use translated text with another model (ex. translation, sentiment analysis, etc.)
+ * - Come up with simple set of steps to use any HuggingFace model
+ * - Try to use TensorFlow.js with Kaggle models or other pre-baked models to see comparison
+ * - See if can get quantized models to work
+ */

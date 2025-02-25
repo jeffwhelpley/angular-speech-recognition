@@ -86,3 +86,10 @@ interface MicrophoneAudioCaptureConfig {
 }
 
 type AudioChunkCallback = (chunk: Float32Array) => void;
+
+/**
+ * TODOs:
+ *
+ * - Use WebAssembly for Audio Processing to improve speed
+ * - More research into AudioWorklet https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Using_AudioWorklet
+ */
