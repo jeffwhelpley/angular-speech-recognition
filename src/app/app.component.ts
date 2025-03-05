@@ -8,11 +8,13 @@ import { userMediaAdapter, browserAdapter } from '../libs/adapters';
         <button (click)="initializeModels()">Initialize Models</button>
         <button (click)="startAudioCapture()">Start Audio Capture</button>
         <button (click)="stopWorkerProcessing()">Stop Worker Processing</button>
-        <p>{{ transcription() }}</p>
+        <p>Status: {{ status() }}</p>
+        <pre>{{ transcription() }}</pre>
     `,
     styles: [],
 })
 export class AppComponent {
+    status = signal('');
     transcription = signal('');
     mediaRecorder: MediaRecorder | null = null;
     worker: Worker | null = null;
