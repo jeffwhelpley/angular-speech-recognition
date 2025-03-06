@@ -22,6 +22,7 @@ const SHOULD_PROCESS_LOCAL = false; // if true use local model; if false use rem
 // buffer audio chunks as they come in to the web worker
 let audioChunkBuffer = new Float32Array(0);
 let isWorkerRunning = true;
+let useRemoteModels = true; // use remote models by default (only local if initialized successfully)
 
 // These are the HuggingFace model objects used to do the heavy lifting for transcribing audio
 let processor: Processor | null = null;
@@ -32,8 +33,10 @@ let model: PreTrainedModel | null = null;
 addEventListener('message', (event) => {
     const eventData: InboundEventData = event.data || {};
 
-    if (eventData.type === InboundEventDataType.INIT) {
-        initializeModel();
+    if (eventData.type === InboundEventDataType.INIT_MODEL_LOCAL) {
+        initializeModelLocally();
+    } else if (eventData.type === InboundEventDataType.INIT_MODEL_REMOTE) {
+        initializeModelRemote();
     } else if (eventData.type === InboundEventDataType.AUDIO) {
         audioChunkBuffer = concatenateFloat32Arrays(audioChunkBuffer, eventData.audioChunk);
     } else if (eventData.type === InboundEventDataType.STOP) {
@@ -62,10 +65,20 @@ function concatenateFloat32Arrays(buffer1: Float32Array, buffer2: Float32Array =
     return tmp;
 }
 
+async function initializeModelRemote() {
+    // local models ready now, so stop using remote models
+    useRemoteModels = true;
+
+    // now that model is initialized, start processing audio chunks
+    runAudioProcessorDaemon();
+}
+
 /**
  * Initialize the HuggingFace model objects and (if successful) start the audio processing daemon
  */
-async function initializeModel() {
+async function initializeModelLocally() {
+    // TODO: get this from cache and save in cache...
+
     try {
         const startTime = Date.now();
         const modelOpts: any = {
@@ -87,6 +100,9 @@ async function initializeModel() {
         const endTime = Date.now();
         const duration = endTime - startTime;
         postOutboundEvent({ type: OutboundEventDataType.READY, text: `Finished in ${duration}ms` });
+
+        // local models ready now, so stop using remote models
+        useRemoteModels = false;
 
         // now that model is initialized, start processing audio chunks
         runAudioProcessorDaemon();
@@ -172,23 +188,14 @@ async function processAudioChunkLocally(audioChunk: Float32Array) {
 }
 
 async function processAudioChunkRemotely(audioChunk: Float32Array) {
-    console.log('processing audio remotely');
-
     // Convert Float32Array to Int16Array (PCM 16-bit)
     const int16Audio = float32ToInt16(audioChunk);
-    console.log('int16Audio (first 50 values):', int16Audio.slice(0, 50));
 
     // encode as WAV
     const wavBuffer = encodeWAV(int16Audio, AUDIO_SAMPLING_RATE);
 
     // Convert to Uint8Array for sending
     const wavUint8Array = new Uint8Array(wavBuffer);
-
-    console.log(wavUint8Array);
-
-    // Convert Int16Array to an array of unsigned bytes
-    // const uint8Audio = int16ToUnsignedBytes(int16Audio);
-    // console.log('uint8Audio (First 100 bytes):', JSON.stringify(uint8Audio.slice(0, 100)));
 
     try {
         const response = await fetch('https://whisper-worker.gethuman.workers.dev', {
@@ -235,17 +242,6 @@ function float32ToInt16(float32Array: Float32Array): Int16Array {
     }
     return int16Array;
 }
-
-// function int16ToUnsignedBytes(int16Array: Int16Array): number[] {
-//     const bytes: number[] = [];
-//     const dataView = new DataView(int16Array.buffer);
-
-//     for (let i = 0; i < int16Array.byteLength; i++) {
-//         // Iterate over BYTES
-//         bytes.push(dataView.getUint8(i)); // Get each byte as unsigned 8-bit int
-//     }
-//     return bytes;
-// }
 
 function encodeWAV(samples: Int16Array, sampleRate: number): ArrayBuffer {
     const numChannels = 1; // Mono
@@ -302,7 +298,8 @@ interface InboundEventData {
 
 enum InboundEventDataType {
     AUDIO = 'audio',
-    INIT = 'init',
+    INIT_MODEL_LOCAL = 'init_model_local',
+    INIT_MODEL_REMOTE = 'init_model_remote',
     DESTROY = 'destroy',
     STOP = 'stop',
     START = 'start',
@@ -320,14 +317,3 @@ enum OutboundEventDataType {
     READY = 'ready',
     ERROR = 'error',
 }
-
-/**
- * TODOs:
- *
- * - Cache models with IndexDB (use navigator.storage.estimate() to get storage estimate)
- * - Download models from Cloudflare instead of HuggingFace
- * - Use translated text with another model (ex. translation, sentiment analysis, etc.)
- * - Come up with simple set of steps to use any HuggingFace model
- * - Try to use TensorFlow.js with Kaggle models or other pre-baked models to see comparison
- * - See if can get quantized models to work
- */

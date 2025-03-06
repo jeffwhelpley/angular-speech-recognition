@@ -4,10 +4,9 @@ import { userMediaAdapter, browserAdapter } from '../libs/adapters';
 @Component({
     selector: 'app-root',
     template: `
-        <button (click)="createWorker()">Create Worker</button>
-        <button (click)="initializeModels()">Initialize Models</button>
-        <button (click)="startAudioCapture()">Start Audio Capture</button>
-        <button (click)="stopWorkerProcessing()">Stop Worker Processing</button>
+        <button (click)="startAudioCapture()">Start Audio Capture (local model)</button>
+        <button (click)="startAudioCapture(true)">Start Audio Capture (remote model)</button>
+        <button (click)="stopAudioCapture()">Stop Audio Capture</button>
         <p>Status: {{ status() }}</p>
         <pre>{{ transcription() }}</pre>
     `,
@@ -19,24 +18,40 @@ export class AppComponent {
     mediaRecorder: MediaRecorder | null = null;
     worker: Worker | null = null;
 
-    constructor() {
-        if (!browserAdapter.isExecutingAiModelsSupported()) {
-            console.error('This browser does not support the required features for this application.');
-            return;
-        }
-    }
-
     createWorker() {
         this.worker = new Worker(new URL('../workers/transcribe-audio-stream.worker', import.meta.url));
-        this.worker.onmessage = ({ data }) => console.log(JSON.stringify({ data }));
-        console.log(`Worker created.`);
+
+        this.worker.onmessage = ({ data }) => {
+            switch (data.type) {
+                case 'transcription':
+                    this.transcription.set(this.transcription + '\n' + data.transcription);
+                    break;
+                case 'ready':
+                    console.log(data.text);
+                    break;
+                case 'error':
+                    console.log(data.text);
+                    break;
+                default:
+                    console.log('Unknown message from worker: ' + JSON.stringify({ data }));
+            }
+        };
     }
 
-    initializeModels() {
-        this.worker?.postMessage({ type: 'init' });
-    }
+    async startAudioCapture(forceRemote = false) {
+        // if the worker doesn't already exist, create it
+        if (!this.worker) {
+            this.createWorker();
+        }
 
-    async startAudioCapture() {
+        // if we are NOT forcing remote and browser supports it, we initialize models locally
+        if (!forceRemote && browserAdapter.isExecutingAiModelsSupported()) {
+            this.worker?.postMessage({ type: 'init_model_local' });
+        } else {
+            this.worker?.postMessage({ type: 'init_model_remote' });
+        }
+
+        // finally start the microphone audio capture and send audio chunks to the worker for processing
         userMediaAdapter.startMicrophoneAudioCapture({
             audioChunkCallback: async (audioChunk: Float32Array) => {
                 this.worker?.postMessage({ type: 'audio', audioChunk });
@@ -44,7 +59,7 @@ export class AppComponent {
         });
     }
 
-    stopWorkerProcessing() {
-        this.worker?.postMessage({ type: 'stop' });
+    stopAudioCapture() {
+        userMediaAdapter.stopMicrophoneAudioCapture();
     }
 }
