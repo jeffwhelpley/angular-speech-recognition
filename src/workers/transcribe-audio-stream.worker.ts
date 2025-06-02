@@ -8,8 +8,9 @@ import {
     Processor,
     PreTrainedModel,
 } from '@huggingface/transformers';
+import { MessageFromWorker, MessageFromWorkerType, MessageToWorker, MessageToWorkerType } from './transcribe-audio-stream.models';
+import { AUDIO_SAMPLE_RATE } from './transcribe-audio-stream.models';
 
-const AUDIO_SAMPLING_RATE = 16_000; // 16,000 Hz (16 kHz); number of audio samples captured per second
 const AUDIO_PROCESSING_TIME = 2000; // 2 seconds
 const OVERLAP_TIME = 200; // 200ms overlap between iterations of processing
 const MODEL_NAME = 'onnx-community/whisper-base'; // best model for the web I've found so far
@@ -17,41 +18,43 @@ const MODEL_DEVICE = 'webgpu';
 const MODEL_FORMAT = 'fp32'; // single-precision floating-point 32-bit format
 const TARGET_LANGUAGE = 'en'; // english
 const MAX_OUTPUT_TOKENS = 64;
-const SHOULD_PROCESS_LOCAL = false; // if true use local model; if false use remote Cloudflare worker
+const CLOUDFLARE_WORKER_URL = 'https://whisper-worker.gethuman.workers.dev';
 
 // buffer audio chunks as they come in to the web worker
 let audioChunkBuffer = new Float32Array(0);
-let isWorkerRunning = true;
-let useRemoteModels = true; // use remote models by default (only local if initialized successfully)
+let useRemoteModels = true;
+let isAudioProcessorDaemonRunning = false;
 
 // These are the HuggingFace model objects used to do the heavy lifting for transcribing audio
 let processor: Processor | null = null;
 let tokenizer: PreTrainedTokenizer | null = null;
 let model: PreTrainedModel | null = null;
 
-// inbound event handler from the main thread to this worker process
+/**
+ * inbound event handler for messages from the main thread to this worker process
+ */
 addEventListener('message', (event) => {
-    const eventData: InboundEventData = event.data || {};
+    const msg: MessageToWorker = event.data || {};
 
-    if (eventData.type === InboundEventDataType.INIT_MODEL_LOCAL) {
+    if (msg.type === MessageToWorkerType.INIT_MODEL_LOCAL) {
         initializeModelLocally();
-    } else if (eventData.type === InboundEventDataType.INIT_MODEL_REMOTE) {
+    } else if (msg.type === MessageToWorkerType.INIT_MODEL_REMOTE) {
         initializeModelRemote();
-    } else if (eventData.type === InboundEventDataType.AUDIO) {
-        audioChunkBuffer = concatenateFloat32Arrays(audioChunkBuffer, eventData.audioChunk);
-    } else if (eventData.type === InboundEventDataType.STOP) {
-        isWorkerRunning = false;
-    } else if (eventData.type === InboundEventDataType.LOG) {
-        console.log(eventData.text);
+    } else if (msg.type === MessageToWorkerType.AUDIO) {
+        audioChunkBuffer = concatenateFloat32Arrays(audioChunkBuffer, msg.audioChunk);
+    } else if (msg.type === MessageToWorkerType.STOP) {
+        isAudioProcessorDaemonRunning = false;
+    } else if (msg.type === MessageToWorkerType.LOG) {
+        console.log(msg.text);
     } else {
-        console.error(`Invalid inbound worker message=${JSON.stringify({ eventData })}`);
+        console.error(`Invalid inbound worker message=${JSON.stringify({ eventData: msg })}`);
     }
 });
 
 /**
  * Post data outbound back to the main thread from this worker process
  */
-function postOutboundEvent(eventData: OutboundEventData) {
+function postOutboundEvent(eventData: MessageFromWorker) {
     postMessage(eventData);
 }
 
@@ -77,7 +80,13 @@ async function initializeModelRemote() {
  * Initialize the HuggingFace model objects and (if successful) start the audio processing daemon
  */
 async function initializeModelLocally() {
-    // TODO: get this from cache and save in cache...
+    // local models ready now, so stop using remote models
+    useRemoteModels = false;
+
+    // no need to initialize again if already initialized
+    if (processor && tokenizer && model) {
+        return;
+    }
 
     try {
         const startTime = Date.now();
@@ -99,16 +108,13 @@ async function initializeModelLocally() {
         model = resp[2];
         const endTime = Date.now();
         const duration = endTime - startTime;
-        postOutboundEvent({ type: OutboundEventDataType.READY, text: `Finished in ${duration}ms` });
-
-        // local models ready now, so stop using remote models
-        useRemoteModels = false;
+        postOutboundEvent({ type: MessageFromWorkerType.READY, text: `Finished in ${duration}ms` });
 
         // now that model is initialized, start processing audio chunks
         runAudioProcessorDaemon();
     } catch (ex) {
         console.error(ex);
-        postOutboundEvent({ type: OutboundEventDataType.ERROR, text: 'Error occurred while initializing model', error: ex as Error });
+        postOutboundEvent({ type: MessageFromWorkerType.ERROR, text: 'Error occurred while initializing model', error: ex as Error });
     }
 }
 
@@ -118,10 +124,17 @@ async function initializeModelLocally() {
  * audio to process and then sending that chunk off to the processAudioChunk function.
  */
 async function runAudioProcessorDaemon() {
-    const audioProcessingLength = AUDIO_SAMPLING_RATE * (AUDIO_PROCESSING_TIME / 1000);
-    const audioOverlapLength = AUDIO_SAMPLING_RATE * (OVERLAP_TIME / 1000);
+    const audioProcessingLength = AUDIO_SAMPLE_RATE * (AUDIO_PROCESSING_TIME / 1000);
+    const audioOverlapLength = AUDIO_SAMPLE_RATE * (OVERLAP_TIME / 1000);
 
-    while (isWorkerRunning) {
+    // if daemon already running, return and don't do anything; else set it to running and get it going
+    if (isAudioProcessorDaemonRunning) {
+        return;
+    } else {
+        isAudioProcessorDaemonRunning = true;
+    }
+
+    while (isAudioProcessorDaemonRunning) {
         if (audioChunkBuffer.length >= audioProcessingLength) {
             // get the audio chunk to process
             const audioToProcess = audioChunkBuffer.slice(0, audioProcessingLength);
@@ -149,10 +162,10 @@ async function processAudioChunk(audioChunk?: Float32Array) {
         return;
     }
 
-    if (SHOULD_PROCESS_LOCAL) {
-        processAudioChunkLocally(audioChunk);
+    if (useRemoteModels) {
+        await processAudioChunkRemotely(audioChunk);
     } else {
-        processAudioChunkRemotely(audioChunk);
+        await processAudioChunkLocally(audioChunk);
     }
 }
 
@@ -183,8 +196,15 @@ async function processAudioChunkLocally(audioChunk: Float32Array) {
     // finally we need the tokenizer to conver the tokens to actual english words
     const outputText = tokenizer.batch_decode(outputs, { skip_special_tokens: true })[0];
 
+    // ignore blank audio
+    if (outputText.indexOf('BLANK_AUDIO') >= 0) {
+        return;
+    }
+
+    console.log('Local transcription: ' + outputText);
+
     // return the transcribed text to the main thread
-    postOutboundEvent({ type: OutboundEventDataType.TRANSCRIPTION, text: outputText });
+    postOutboundEvent({ type: MessageFromWorkerType.TRANSCRIPTION, text: outputText });
 }
 
 async function processAudioChunkRemotely(audioChunk: Float32Array) {
@@ -192,20 +212,20 @@ async function processAudioChunkRemotely(audioChunk: Float32Array) {
     const int16Audio = float32ToInt16(audioChunk);
 
     // encode as WAV
-    const wavBuffer = encodeWAV(int16Audio, AUDIO_SAMPLING_RATE);
+    const wavBuffer = encodeWAV(int16Audio, AUDIO_SAMPLE_RATE);
 
     // Convert to Uint8Array for sending
     const wavUint8Array = new Uint8Array(wavBuffer);
 
     try {
-        const response = await fetch('https://whisper-worker.gethuman.workers.dev', {
+        const response = await fetch(CLOUDFLARE_WORKER_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 // Add any other headers your Cloudflare Worker might require (e.g., authentication)
             },
             body: JSON.stringify({
-                sampleRate: AUDIO_SAMPLING_RATE,
+                sampleRate: AUDIO_SAMPLE_RATE,
                 audioChunk: Array.from(wavUint8Array),
             }),
         });
@@ -219,10 +239,11 @@ async function processAudioChunkRemotely(audioChunk: Float32Array) {
         }
 
         const responseData = await response.json(); // Assuming the worker returns JSON
-        console.log('Server response:', responseData); // Process the server's response
+
+        console.log('Remote transcription: ' + responseData.transcription);
 
         // return the transcribed text to the main thread
-        postOutboundEvent({ type: OutboundEventDataType.TRANSCRIPTION, text: responseData.transcription });
+        postOutboundEvent({ type: MessageFromWorkerType.TRANSCRIPTION, text: responseData.transcription });
     } catch (error) {
         console.error('Error sending audio chunk:', error);
     }
@@ -286,34 +307,4 @@ function writeString(view: DataView, offset: number, text: string) {
     for (let i = 0; i < text.length; i++) {
         view.setUint8(offset + i, text.charCodeAt(i));
     }
-}
-
-// **** models below ****
-
-interface InboundEventData {
-    type: InboundEventDataType;
-    audioChunk?: Float32Array;
-    text?: string;
-}
-
-enum InboundEventDataType {
-    AUDIO = 'audio',
-    INIT_MODEL_LOCAL = 'init_model_local',
-    INIT_MODEL_REMOTE = 'init_model_remote',
-    DESTROY = 'destroy',
-    STOP = 'stop',
-    START = 'start',
-    LOG = 'log',
-}
-
-interface OutboundEventData {
-    type: OutboundEventDataType;
-    text?: string;
-    error?: Error;
-}
-
-enum OutboundEventDataType {
-    TRANSCRIPTION = 'transcription',
-    READY = 'ready',
-    ERROR = 'error',
 }

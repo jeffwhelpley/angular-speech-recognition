@@ -1,12 +1,20 @@
 import { Component, signal } from '@angular/core';
 import { userMediaAdapter, browserAdapter } from '../libs/adapters';
+import { MessageToWorkerType, MessageFromWorker, MessageFromWorkerType } from '../workers/transcribe-audio-stream.models';
 
 @Component({
     selector: 'app-root',
     template: `
-        <button (click)="startAudioCapture()">Start Audio Capture (local model)</button>
-        <button (click)="startAudioCapture(true)">Start Audio Capture (remote model)</button>
-        <button (click)="stopAudioCapture()">Stop Audio Capture</button>
+        @if (isAudioCaptureActive()) {
+            <button (click)="stopAudioCapture()">Stop Audio Capture</button>
+        } @else {
+            @if (isLocalDeviceAbleToRunAiModels()) {
+                <button (click)="startAudioCaptureWithLocalTranscription()">Start Audio Capture (local transcription)</button>
+            }
+
+            <button (click)="startAudioCaptureWithRemoteTranscription()">Start Audio Capture (remote transcription)</button>
+        }
+
         <p>Status: {{ status() }}</p>
         <pre>{{ transcription() }}</pre>
     `,
@@ -15,51 +23,51 @@ import { userMediaAdapter, browserAdapter } from '../libs/adapters';
 export class AppComponent {
     status = signal('');
     transcription = signal('');
-    mediaRecorder: MediaRecorder | null = null;
-    worker: Worker | null = null;
+    isAudioCaptureActive = signal(false);
+    isLocalDeviceAbleToRunAiModels = signal(browserAdapter.isLocalDeviceAbleToRunAiModels());
 
-    createWorker() {
-        this.worker = new Worker(new URL('../workers/transcribe-audio-stream.worker', import.meta.url));
+    transcriptionWorker: Worker | null = null;
 
-        this.worker.onmessage = ({ data }) => {
-            switch (data.type) {
-                case 'transcription':
-                    this.transcription.set(this.transcription + '\n' + data.transcription);
-                    break;
-                case 'ready':
-                    console.log(data.text);
-                    break;
-                case 'error':
-                    console.log(data.text);
-                    break;
-                default:
-                    console.log('Unknown message from worker: ' + JSON.stringify({ data }));
-            }
-        };
-    }
-
-    async startAudioCapture(forceRemote = false) {
-        // if the worker doesn't already exist, create it
-        if (!this.worker) {
-            this.createWorker();
-        }
-
-        // if we are NOT forcing remote and browser supports it, we initialize models locally
-        if (!forceRemote && browserAdapter.isExecutingAiModelsSupported()) {
-            this.worker?.postMessage({ type: 'init_model_local' });
-        } else {
-            this.worker?.postMessage({ type: 'init_model_remote' });
-        }
-
-        // finally start the microphone audio capture and send audio chunks to the worker for processing
-        userMediaAdapter.startMicrophoneAudioCapture({
-            audioChunkCallback: async (audioChunk: Float32Array) => {
-                this.worker?.postMessage({ type: 'audio', audioChunk });
-            },
-        });
-    }
-
-    stopAudioCapture() {
+    public stopAudioCapture() {
         userMediaAdapter.stopMicrophoneAudioCapture();
+        this.isAudioCaptureActive.set(false);
+        this.transcriptionWorker?.postMessage({ type: MessageToWorkerType.STOP });
+    }
+
+    public async startAudioCaptureWithLocalTranscription() {
+        this.startAudioCapture(MessageToWorkerType.INIT_MODEL_LOCAL);
+    }
+
+    public async startAudioCaptureWithRemoteTranscription() {
+        this.startAudioCapture(MessageToWorkerType.INIT_MODEL_REMOTE);
+    }
+
+    private async startAudioCapture(initModelType: MessageToWorkerType) {
+        this.ensureWorkerCreated();
+
+        // have the worker initialize the model (either local or remote)
+        this.transcriptionWorker?.postMessage({ type: initModelType });
+
+        // stream audio from the user's microphone to the worker for transcriptions
+        userMediaAdapter.startMicrophoneAudioCapture((audioChunk) => {
+            this.transcriptionWorker?.postMessage({ type: MessageToWorkerType.AUDIO, audioChunk });
+        });
+
+        this.isAudioCaptureActive.set(true);
+    }
+
+    private ensureWorkerCreated() {
+        if (!this.transcriptionWorker) {
+            this.transcriptionWorker = new Worker(new URL('../workers/transcribe-audio-stream.worker', import.meta.url));
+            this.transcriptionWorker.onmessage = ({ data }) => this.handleMessageFromWorker(data);
+        }
+    }
+
+    private handleMessageFromWorker(msg: MessageFromWorker) {
+        if (msg.type === MessageFromWorkerType.TRANSCRIPTION) {
+            this.transcription.set(this.transcription() + '\n' + msg.text);
+        } else {
+            console.log('Message from worker: ' + JSON.stringify({ msg }));
+        }
     }
 }

@@ -6,12 +6,33 @@ declare global {
 }
 
 class BrowserAdapter {
-    isExecutingAiModelsSupported() {
-        const isWebWorkerSupported = typeof Worker !== 'undefined';
-        const isWebGpuAvailable = !!navigator.gpu;
-        const isWasmCapable = typeof window.WebAssembly === 'object';
-        const isEnoughMemory = navigator.deviceMemory >= 2; // 2GB
-        return isWebWorkerSupported && isWebGpuAvailable && isWasmCapable && isEnoughMemory;
+    isLocalDeviceAbleToRunAiModels() {
+        const isEnoughMemory = this.getDeviceMemory() >= 2;
+        return this.isWebWorkerAvailable() && this.isWebGpuAvailable() && this.isWebAssemblyAvailable() && isEnoughMemory;
+    }
+
+    isWebWorkerAvailable() {
+        return typeof Worker !== 'undefined';
+    }
+
+    isWebCacheAvailable() {
+        return typeof self !== 'undefined' && 'caches' in self;
+    }
+
+    isWebGpuAvailable() {
+        return typeof navigator !== 'undefined' && 'gpu' in navigator;
+    }
+
+    isWebNnAvailable() {
+        return typeof navigator !== 'undefined' && 'ml' in navigator;
+    }
+
+    isWebAssemblyAvailable() {
+        return typeof window.WebAssembly === 'object';
+    }
+
+    getDeviceMemory() {
+        return navigator.deviceMemory;
     }
 }
 
