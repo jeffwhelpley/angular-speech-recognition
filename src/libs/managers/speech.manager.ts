@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { StateManager } from './state.manager';
 import { AppStatus, SpeechRecognitionType } from '../models';
 import { BrowserAdapter, UserMediaAdapter } from '../adapters';
-import { MessageFromWorker, MessageFromWorkerType, MessageToWorkerType } from '../../worker';
+import { MessageFromWorker, MessageFromWorkerType, MessageToWorkerType, AUDIO_SAMPLE_RATE, float32ToInt16, encodeWAV } from '../../worker';
 
 @Injectable()
 export class SpeechManager {
@@ -69,11 +69,9 @@ export class SpeechManager {
         this.addDebugOutput(`Starting to download Chrome Built-in AI model...`);
         const startTime = new Date().getTime();
 
+        let session: any;
         try {
-            const session = await this.browser.getChromeBuiltInAiSession();
-
-            // now that we have session, do prompt...
-            this.addDebugOutput('got model but need code to do something with it');
+            session = await this.browser.getChromeBuiltInAiSession();
         } catch (ex) {
             this.addDebugOutput(`Error downloading Chrome Built-in AI model: ${ex}`);
             return;
@@ -82,6 +80,33 @@ export class SpeechManager {
         const endTime = new Date().getTime();
         const duration = endTime - startTime;
         this.addDebugOutput(`Starting to download Chrome Built-in AI model...done in ${duration}ms`);
+
+        this.addDebugOutput('Requesting permission to user microphone...');
+
+        try {
+            this.userMedia.startMicrophoneAudioCapture(async (audioChunk) => {
+                const int16Audio = float32ToInt16(audioChunk);
+                const wavBuffer = encodeWAV(int16Audio, AUDIO_SAMPLE_RATE);
+                const audioBlob = new Blob([wavBuffer], { type: 'audio/wav' });
+
+                const result = await session.prompt({
+                    role: 'user',
+                    content: [
+                        { type: 'text', value: 'Please transcribe the audio' },
+                        { type: 'audio', value: audioBlob },
+                    ],
+                });
+
+                this.addToTranscription(result);
+            });
+        } catch (ex) {
+            this.addDebugOutput(`Error getting access to user microphone: ${ex}`);
+            return;
+        }
+
+        this.addDebugOutput('Requesting permission to user microphone...done.');
+        this.addDebugOutput('Starting to transcribe user audio with Chrome Built-in AI model...');
+        this.state.status.set(AppStatus.TRANSCRIBING);
     }
 
     async startWebSpeechApiTranscription() {
