@@ -8,7 +8,6 @@ export interface MessageFromWorker {
 }
 
 export enum MessageFromWorkerType {
-    PROCESS_AUDIO_CHUNK = 'process_audio_chunk',
     TRANSCRIPTION = 'transcription',
     READY = 'ready',
     ERROR = 'error',

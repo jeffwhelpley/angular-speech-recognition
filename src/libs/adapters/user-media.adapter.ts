@@ -1,8 +1,10 @@
-import { AUDIO_SAMPLE_RATE } from '../../workers/transcribe-audio-stream.models';
+import { Injectable } from '@angular/core';
+import { AUDIO_SAMPLE_RATE } from '../../worker/transcribe-audio-stream.models';
 
 const AUDIO_WORKLET_PROCESSOR_NAME = 'audio-processor';
 
-class UserMediaAdapter {
+@Injectable()
+export class UserMediaAdapter {
     mediaStream: MediaStream | null = null;
     audioContext: AudioContext | null = null;
     isMicrophoneAudioCaptureActive = false;
@@ -19,26 +21,21 @@ class UserMediaAdapter {
             this.isMicrophoneAudioCaptureActive = true;
         }
 
-        try {
-            // this will prompt the user to get permission to their microphone
-            // error thrown if not supported or user denies permission
-            this.mediaStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+        // this will prompt the user to get permission to their microphone
+        // error thrown if not supported or user denies permission
+        this.mediaStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
 
-            // create AudioContext which manages the streaming audio data
-            this.audioContext = new AudioContext({ sampleRate: AUDIO_SAMPLE_RATE });
+        // create AudioContext which manages the streaming audio data
+        this.audioContext = new AudioContext({ sampleRate: AUDIO_SAMPLE_RATE });
 
-            // AudioWorklet used to process the audio data in real-time in a separate thread
-            await this.audioContext.audioWorklet.addModule(this.getWorkletUrl());
-            const audioProcessor = new AudioWorkletNode(this.audioContext, AUDIO_WORKLET_PROCESSOR_NAME);
-            audioProcessor.port.onmessage = (event) => audioChunkCallback(event.data);
+        // AudioWorklet used to process the audio data in real-time in a separate thread
+        await this.audioContext.audioWorklet.addModule(this.getWorkletUrl());
+        const audioProcessor = new AudioWorkletNode(this.audioContext, AUDIO_WORKLET_PROCESSOR_NAME);
+        audioProcessor.port.onmessage = (event) => audioChunkCallback(event.data);
 
-            // connect the microphone audio stream to the AudioWorkletNode
-            const source = this.audioContext.createMediaStreamSource(this.mediaStream);
-            source.connect(audioProcessor);
-        } catch (ex) {
-            console.error(ex);
-            this.stopMicrophoneAudioCapture();
-        }
+        // connect the microphone audio stream to the AudioWorkletNode
+        const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+        source.connect(audioProcessor);
     }
 
     /**
@@ -83,5 +80,3 @@ class UserMediaAdapter {
         return URL.createObjectURL(blob);
     }
 }
-
-export const userMediaAdapter = new UserMediaAdapter();

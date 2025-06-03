@@ -1,0 +1,134 @@
+:host {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh; /* Full viewport height for vertical centering */
+    padding: var(--size-fluid-3); /* Responsive padding */
+    text-align: center; /* Center align text for h1 */
+}
+
+h1 {
+    font-size: var(--font-size-7); /* Large, Material-like heading */
+    font-weight: var(--font-weight-3); /* Lighter weight for large headings */
+    color: var(--text-1);
+    margin-block-start: 0;
+    margin-block-end: var(--size-fluid-5); /* Space below heading */
+}
+
+main {
+    display: flex;
+    flex-direction: column; /* Stack buttons vertically */
+    gap: var(--size-4); /* Space between buttons */
+    width: 100%;
+    max-width: var(--size-content-3); /* Max width for the button column (e.g., 60ch) */
+}
+
+button {
+    display: flex; /* Align icon and text */
+    align-items: center;
+    justify-content: center;
+    gap: var(--size-3); /* Space between icon and text */
+    width: 100%; /* Make buttons take full width of .button-group */
+    padding: var(--size-4) var(--size-3); /* Generous padding for a large feel */
+    font-size: var(--font-size-3); /* Very big font */
+    font-weight: var(--font-weight-6); /* Bold text */
+    line-height: var(--font-lineheight-2);
+    color: var(--indigo-6); /* Blue text */
+    background-color: var(--surface-1); /* White background */
+    border: var(--border-size-2) solid var(--indigo-6); /* Blue border */
+    border-radius: var(--radius-2); /* Standard Material corner radius (4px) */
+    box-shadow: var(--shadow-1); /* Lighter shadow for outlined buttons */
+    text-transform: uppercase;
+    letter-spacing: var(--font-letterspacing-2);
+    cursor: pointer;
+    transition:
+        background-color 0.2s var(--ease-out-3),
+        color 0.2s var(--ease-out-3),
+        border-color 0.2s var(--ease-out-3),
+        box-shadow 0.2s var(--ease-out-3);
+}
+
+button:hover,
+button:focus-visible {
+    background-color: var(--indigo-1); /* Light blue tint on hover */
+    color: var(--indigo-7);
+    border-color: var(--indigo-7); /* Darker blue border on hover */
+    box-shadow: var(--shadow-2); /* Increased elevation on hover/focus */
+}
+
+button:active {
+    background-color: var(--indigo-2); /* Slightly darker blue tint on active */
+    color: var(--indigo-8);
+    border-color: var(--indigo-8);
+    box-shadow: var(--shadow-1); /* Keep or remove shadow on active */
+}
+
+.button-icon {
+    width: var(--font-size-5); /* Adjust icon size as needed */
+    height: var(--font-size-5); /* Adjust icon size as needed */
+    object-fit: contain; /* Ensures the image scales nicely within the dimensions */
+}
+
+h2 {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--size-2);
+    margin-block-start: var(--size-4); /* Add some space above if buttons were active */
+    color: var(--text-2);
+}
+
+.mic-icon {
+    width: var(--size-6); /* Slightly larger mic icon */
+    height: var(--size-6);
+    filter: var(--icon-filter-primary, none); /* Example if you want to color it with CSS, e.g. using a duotone SVG or a mask */
+}
+
+.output-area {
+    width: 100%;
+    height: 200px; /* Fixed height */
+    border: var(--border-size-1) solid black;
+    border-radius: var(--radius-2);
+    padding: var(--size-3);
+    background-color: var(--surface-2);
+    overflow-y: auto; /* Vertical scrollbar */
+    text-align: left; /* Align text to the left */
+    color: var(--text-1);
+
+    > pre {
+        margin: 0; /* Remove default pre margin */
+        font-family: var(--font-mono);
+        font-size: var(--font-size-1);
+        white-space: pre-wrap; /* Wrap text and preserve newlines */
+        word-break: break-word; /* Break long words to prevent overflow */
+    }
+}
+
+.stop-button {
+    /* Reusing some button styles but making it distinct */
+    padding: var(--size-3) var(--size-5);
+    font-size: var(--font-size-2);
+    font-weight: var(--font-weight-6);
+    color: var(--gray-0); /* White text */
+    background-color: var(--red-6); /* Red background for stop */
+    border: var(--border-size-2) solid var(--red-7);
+    border-radius: var(--radius-2);
+    box-shadow: var(--shadow-1);
+    text-transform: uppercase;
+    letter-spacing: var(--font-letterspacing-2);
+    cursor: pointer;
+    align-self: center; /* Center the button within the main flex container */
+    min-width: var(--size-12); /* Give it some minimum width */
+
+    &:active {
+        background-color: var(--red-8);
+    }
+
+    &:hover,
+    &:focus-visible {
+        background-color: var(--red-7);
+        border-color: var(--red-8);
+        box-shadow: var(--shadow-2);
+    }
+}

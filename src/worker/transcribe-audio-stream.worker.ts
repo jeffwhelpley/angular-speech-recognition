@@ -8,8 +8,13 @@ import {
     Processor,
     PreTrainedModel,
 } from '@huggingface/transformers';
-import { MessageFromWorker, MessageFromWorkerType, MessageToWorker, MessageToWorkerType } from './transcribe-audio-stream.models';
-import { AUDIO_SAMPLE_RATE } from './transcribe-audio-stream.models';
+import {
+    MessageFromWorker,
+    MessageFromWorkerType,
+    MessageToWorker,
+    MessageToWorkerType,
+    AUDIO_SAMPLE_RATE,
+} from './transcribe-audio-stream.models';
 
 const AUDIO_PROCESSING_TIME = 2000; // 2 seconds
 const OVERLAP_TIME = 200; // 200ms overlap between iterations of processing
@@ -85,6 +90,10 @@ async function initializeModelLocally() {
 
     // no need to initialize again if already initialized
     if (processor && tokenizer && model) {
+        if (!isAudioProcessorDaemonRunning) {
+            postOutboundEvent({ type: MessageFromWorkerType.READY });
+            runAudioProcessorDaemon();
+        }
         return;
     }
 
@@ -165,8 +174,7 @@ async function processAudioChunk(audioChunk?: Float32Array) {
     if (useRemoteModels) {
         await processAudioChunkRemotely(audioChunk);
     } else {
-        postOutboundEvent({ type: MessageFromWorkerType.PROCESS_AUDIO_CHUNK, audioChunk: audioChunk });
-        // await processAudioChunkLocally(audioChunk);
+        await processAudioChunkLocally(audioChunk);
     }
 }
 

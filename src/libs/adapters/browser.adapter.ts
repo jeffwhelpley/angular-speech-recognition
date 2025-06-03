@@ -1,3 +1,5 @@
+import { Injectable } from '@angular/core';
+
 declare global {
     interface Navigator {
         readonly gpu: any;
@@ -10,7 +12,8 @@ declare global {
     }
 }
 
-class BrowserAdapter {
+@Injectable()
+export class BrowserAdapter {
     isLocalDeviceAbleToRunAiModels() {
         const isEnoughMemory = this.getDeviceMemory() >= 2;
         return this.isWebWorkerAvailable() && this.isWebGpuAvailable() && this.isWebAssemblyAvailable() && isEnoughMemory;
@@ -40,37 +43,23 @@ class BrowserAdapter {
         return typeof window.SpeechRecognition !== 'undefined' || typeof window.webkitSpeechRecognition !== 'undefined';
     }
 
+    isChrome() {
+        return navigator.userAgent.indexOf('Chrome') > -1;
+    }
+
     async getChromeBuiltInAiAvailability() {
         if (typeof window.LanguageModel === 'undefined') {
             return 'Not Available';
         } else {
-            const availability = await window.LanguageModel.availability({
-                expectedInputs: [{ type: 'audio', languages: ['en'] }],
-            });
-            return availability;
+            return window.LanguageModel.availability({ expectedInputs: [{ type: 'audio' }] });
         }
     }
 
     async getChromeBuiltInAiSession() {
-        console.log(`Starting to download model`);
-        const startTime = new Date().getTime();
-        const session = await window.LanguageModel.create({
-            // monitor(m: any) {
-            //     m.addEventListener('downloadprogress', (e: any) => {
-            //         console.log(`Downloaded ${e.loaded} of ${e.total} bytes.`);
-            //     });
-            // },
-            expectedInputs: [{ type: 'audio' }],
-        });
-        const endTime = new Date().getTime();
-        const duration = endTime - startTime;
-        console.log(`Finished in ${duration}ms`);
-        return session;
+        return window.LanguageModel.create({ expectedInputs: [{ type: 'audio' }] });
     }
 
     getDeviceMemory() {
         return navigator.deviceMemory;
     }
 }
-
-export const browserAdapter = new BrowserAdapter();
