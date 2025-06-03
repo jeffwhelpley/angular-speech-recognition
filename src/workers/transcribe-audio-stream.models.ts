@@ -3,10 +3,12 @@ export const AUDIO_SAMPLE_RATE = 16000; // 16,000 Hz (i.e. 16 kHz); number of au
 export interface MessageFromWorker {
     type: MessageFromWorkerType;
     text?: string;
+    audioChunk?: Float32Array;
     error?: Error;
 }
 
 export enum MessageFromWorkerType {
+    PROCESS_AUDIO_CHUNK = 'process_audio_chunk',
     TRANSCRIPTION = 'transcription',
     READY = 'ready',
     ERROR = 'error',

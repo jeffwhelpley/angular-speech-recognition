@@ -165,7 +165,8 @@ async function processAudioChunk(audioChunk?: Float32Array) {
     if (useRemoteModels) {
         await processAudioChunkRemotely(audioChunk);
     } else {
-        await processAudioChunkLocally(audioChunk);
+        postOutboundEvent({ type: MessageFromWorkerType.PROCESS_AUDIO_CHUNK, audioChunk: audioChunk });
+        // await processAudioChunkLocally(audioChunk);
     }
 }
 

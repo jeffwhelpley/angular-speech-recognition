@@ -1,1 +1,26 @@
-/* You can add global styles to this file, and also import other style files */
+@import 'open-props/style';
+
+html {
+    box-sizing: border-box;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: inherit;
+}
+
+body {
+    margin: 0; /* normalize.css handles this, but good to be explicit */
+    font-family: var(--font-sans); /* Open Props default sans-serif is a good base */
+    line-height: var(--font-lineheight-3);
+    color: var(--text-1); /* Default text color */
+    background-color: var(--surface-1); /* Light background, common in Material */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ensure app-root can be used for full-height layouts if needed */
+app-root {
+    display: block; /* Or flex, depending on direct children layout */
+}
