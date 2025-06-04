@@ -47,6 +47,11 @@ export class BrowserAdapter {
         return navigator.userAgent.indexOf('Chrome') > -1;
     }
 
+    getWebSpeechRecognition() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        return new SpeechRecognition();
+    }
+
     async getChromeBuiltInAiAvailability() {
         if (typeof window.LanguageModel === 'undefined') {
             return 'Not Available';
