@@ -85,7 +85,7 @@ export class SpeechManager {
         this.addDebugOutput('Requesting permission to user microphone...');
 
         try {
-            this.userMedia.startMicrophoneAudioCapture(async (audioChunk) => {
+            this.userMedia.startMicrophoneAudioCapture(async (audioChunk: Float32Array<ArrayBufferLike>) => {
                 const int16Audio = float32ToInt16(audioChunk);
                 const wavBuffer = encodeWAV(int16Audio, AUDIO_SAMPLE_RATE);
                 const audioBlob = new Blob([wavBuffer], { type: 'audio/wav' });
