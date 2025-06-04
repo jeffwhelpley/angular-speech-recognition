@@ -118,6 +118,11 @@ export class SpeechManager {
             return;
         }
 
+        // NOTE: the transcribe-audio-stream.worker is processing audio from the user's microphone in a separate worker thread
+        // and chunking the audio up into 2 second Blob segments that are formatted as wav files
+        // this separate queue is set up on the main thread in case the Chrome AI model takes longer than 2 seconds to process
+        // each segment. Basically, we let the Blobs build up in the chromeAiAudioBlobQueue and we process them as quickly
+        // as the Chrome AI model can handle them
         this.isChromeAudioProcessorDaemonRunning = true;
         while (this.isChromeAudioProcessorDaemonRunning) {
             const audioBlob = this.chromeAiAudioBlobQueue.shift();
