@@ -1,5 +1,6 @@
 import { Injectable, signal } from '@angular/core';
-import { AppStatus, SpeechRecognitionType } from '../models';
+import { AppStatus } from '../models';
+import { SpeechRecognitionType } from '../../worker';
 
 @Injectable()
 export class StateManager {

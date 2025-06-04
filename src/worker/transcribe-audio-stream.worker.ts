@@ -14,6 +14,7 @@ import {
     MessageToWorker,
     MessageToWorkerType,
     AUDIO_SAMPLE_RATE,
+    SpeechRecognitionType,
 } from './transcribe-audio-stream.models';
 import { float32ToInt16, encodeWAV } from './transcribe-audio-stream.utils';
 
@@ -28,7 +29,7 @@ const CLOUDFLARE_WORKER_URL = 'https://whisper-worker.gethuman.workers.dev';
 
 // buffer audio chunks as they come in to the web worker
 let audioChunkBuffer = new Float32Array(0);
-let useRemoteModels = true;
+let speechRecognitionType: SpeechRecognitionType = SpeechRecognitionType.NONE;
 let isAudioProcessorDaemonRunning = false;
 
 // These are the HuggingFace model objects used to do the heavy lifting for transcribing audio
@@ -42,10 +43,16 @@ let model: PreTrainedModel | null = null;
 addEventListener('message', (event) => {
     const msg: MessageToWorker = event.data || {};
 
-    if (msg.type === MessageToWorkerType.INIT_MODEL_LOCAL) {
-        initializeModelLocally();
-    } else if (msg.type === MessageToWorkerType.INIT_MODEL_REMOTE) {
-        initializeModelRemote();
+    if (msg.type === MessageToWorkerType.INIT_MODEL) {
+        speechRecognitionType = msg.speechRecognitionType || SpeechRecognitionType.NONE;
+
+        if (speechRecognitionType === SpeechRecognitionType.TRANSFORMERS) {
+            initializeTransformersModel();
+        }
+
+        if (!isAudioProcessorDaemonRunning) {
+            runAudioProcessorDaemon();
+        }
     } else if (msg.type === MessageToWorkerType.AUDIO) {
         audioChunkBuffer = concatenateFloat32Arrays(audioChunkBuffer, msg.audioChunk);
     } else if (msg.type === MessageToWorkerType.STOP) {
@@ -74,27 +81,12 @@ function concatenateFloat32Arrays(buffer1: Float32Array, buffer2: Float32Array =
     return tmp;
 }
 
-async function initializeModelRemote() {
-    // local models ready now, so stop using remote models
-    useRemoteModels = true;
-
-    // now that model is initialized, start processing audio chunks
-    runAudioProcessorDaemon();
-}
-
 /**
  * Initialize the HuggingFace model objects and (if successful) start the audio processing daemon
  */
-async function initializeModelLocally() {
-    // local models ready now, so stop using remote models
-    useRemoteModels = false;
-
+async function initializeTransformersModel() {
     // no need to initialize again if already initialized
     if (processor && tokenizer && model) {
-        if (!isAudioProcessorDaemonRunning) {
-            postOutboundEvent({ type: MessageFromWorkerType.READY });
-            runAudioProcessorDaemon();
-        }
         return;
     }
 
@@ -119,9 +111,6 @@ async function initializeModelLocally() {
         const endTime = Date.now();
         const duration = endTime - startTime;
         postOutboundEvent({ type: MessageFromWorkerType.READY, text: `Finished in ${duration}ms` });
-
-        // now that model is initialized, start processing audio chunks
-        runAudioProcessorDaemon();
     } catch (ex) {
         console.error(ex);
         postOutboundEvent({ type: MessageFromWorkerType.ERROR, text: 'Error occurred while initializing model', error: ex as Error });
@@ -172,14 +161,23 @@ async function processAudioChunk(audioChunk?: Float32Array) {
         return;
     }
 
-    if (useRemoteModels) {
-        await processAudioChunkRemotely(audioChunk);
-    } else {
-        await processAudioChunkLocally(audioChunk);
+    if (speechRecognitionType === SpeechRecognitionType.CLOUDFLARE) {
+        await processAudioChunkWithCloudflare(audioChunk);
+    } else if (speechRecognitionType === SpeechRecognitionType.TRANSFORMERS) {
+        await processAudioChunkWithTransformers(audioChunk);
+    } else if (speechRecognitionType === SpeechRecognitionType.CHROME) {
+        await processAudioChunkWithChromeBuiltInAi(audioChunk);
     }
 }
 
-async function processAudioChunkLocally(audioChunk: Float32Array) {
+async function processAudioChunkWithChromeBuiltInAi(audioChunk: Float32Array) {
+    const int16Audio = float32ToInt16(audioChunk);
+    const wavBuffer = encodeWAV(int16Audio, AUDIO_SAMPLE_RATE);
+    const audioBlob = new Blob([wavBuffer], { type: 'audio/wav' });
+    postOutboundEvent({ type: MessageFromWorkerType.AUDIO_BLOB, audioBlob });
+}
+
+async function processAudioChunkWithTransformers(audioChunk: Float32Array) {
     if (!tokenizer || !processor || !model) {
         console.error('processAudioChunk called before model initialized');
         return;
@@ -217,15 +215,10 @@ async function processAudioChunkLocally(audioChunk: Float32Array) {
     postOutboundEvent({ type: MessageFromWorkerType.TRANSCRIPTION, text: outputText });
 }
 
-async function processAudioChunkRemotely(audioChunk: Float32Array) {
-    // Convert Float32Array to Int16Array (PCM 16-bit)
-    const int16Audio = float32ToInt16(audioChunk);
-
-    // encode as WAV
-    const wavBuffer = encodeWAV(int16Audio, AUDIO_SAMPLE_RATE);
-
-    // Convert to Uint8Array for sending
-    const wavUint8Array = new Uint8Array(wavBuffer);
+async function processAudioChunkWithCloudflare(audioChunk: Float32Array) {
+    const int16Audio = float32ToInt16(audioChunk); // Convert Float32Array to Int16Array (PCM 16-bit)
+    const wavBuffer = encodeWAV(int16Audio, AUDIO_SAMPLE_RATE); // encode as WAV
+    const wavUint8Array = new Uint8Array(wavBuffer); // Convert to Uint8Array for sending
 
     try {
         const response = await fetch(CLOUDFLARE_WORKER_URL, {
