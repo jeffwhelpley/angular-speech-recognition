@@ -1,22 +1,24 @@
 import { Component, ViewChild, ElementRef, effect } from '@angular/core';
-import { AppStatus } from '../libs/models';
-import { SpeechManager, StateManager } from '../libs/managers';
+import { AppStatus, SpeechRecognitionType } from '../libs/models';
 import { BrowserAdapter, UserMediaAdapter } from '../libs/adapters';
+import { StateManager } from '../libs/managers';
+import { AUDIO_PROCESSOR_PROVIDERS, MainThreadAudioProcessor } from '../libs/audio-processors';
 
 @Component({
     selector: 'app-root',
     templateUrl: './app.component.html',
     styleUrl: './app.component.css',
-    providers: [SpeechManager, StateManager, BrowserAdapter, UserMediaAdapter],
+    providers: [...AUDIO_PROCESSOR_PROVIDERS, StateManager, BrowserAdapter, UserMediaAdapter],
     standalone: true,
 })
 export class AppComponent {
+    SpeechRecognitionType = SpeechRecognitionType;
     AppStatus = AppStatus;
     @ViewChild('outputArea', { static: false }) outputAreaRef?: ElementRef<HTMLDivElement>;
 
     constructor(
         public state: StateManager,
-        public speech: SpeechManager
+        public audioProcessor: MainThreadAudioProcessor
     ) {
         effect(() => {
             // Access the signals to make them dependencies of this effect
@@ -33,5 +35,24 @@ export class AppComponent {
                 }
             });
         });
+    }
+
+    startTranscription(speechRecognitionType: SpeechRecognitionType) {
+        this.state.type.set(speechRecognitionType);
+        this.state.status.set(AppStatus.STARTING);
+
+        this.audioProcessor.startTranscription(speechRecognitionType);
+
+        this.state.status.set(AppStatus.TRANSCRIBING);
+    }
+
+    stopTranscription() {
+        this.state.debugOutput.set('');
+        this.state.transcription.set('');
+
+        this.state.status.set(AppStatus.DEFAULT);
+        this.state.type.set(SpeechRecognitionType.NONE);
+
+        this.audioProcessor.stopTranscription();
     }
 }

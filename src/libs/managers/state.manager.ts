@@ -1,6 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { AppStatus } from '../models';
-import { SpeechRecognitionType } from '../../worker';
+import { AppStatus, SpeechRecognitionType } from '../models';
 
 @Injectable()
 export class StateManager {
@@ -8,4 +7,16 @@ export class StateManager {
     type = signal<SpeechRecognitionType>(SpeechRecognitionType.NONE);
     debugOutput = signal('');
     transcription = signal('');
+
+    addDebugOutput(msg?: string) {
+        if (msg) {
+            this.debugOutput.set(this.debugOutput() + '\n' + msg);
+        }
+    }
+
+    addToTranscription(msg?: string) {
+        if (msg) {
+            this.transcription.set(this.transcription() + '\n' + msg);
+        }
+    }
 }

@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { AUDIO_SAMPLE_RATE } from '../../worker/transcribe-audio-stream.models';
+import { AUDIO_SAMPLE_RATE } from '../models/audio-sample-rate';
 
 const AUDIO_WORKLET_PROCESSOR_NAME = 'audio-processor';
 

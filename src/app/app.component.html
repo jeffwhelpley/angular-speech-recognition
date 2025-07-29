@@ -1,19 +1,19 @@
 <h1>Angular Speech Recognition Demos</h1>
 <main>
     @if (state.status() === AppStatus.DEFAULT) {
-        <button (click)="speech.startTransformersJsTranscription()">
+        <button (click)="startTranscription(SpeechRecognitionType.TRANSFORMERS)">
             <img src="/assets/icons/hugging-face.svg" alt="Transformer.js icon" class="button-icon" />
             <span>Transformer.js</span>
         </button>
-        <button (click)="speech.startChromeBuiltInAiTranscription()">
+        <button (click)="startTranscription(SpeechRecognitionType.CHROME)">
             <img src="/assets/icons/chrome.svg" alt="Chrome icon" class="button-icon" />
             <span>Chrome Built-in AI</span>
         </button>
-        <button (click)="speech.startWebSpeechApiTranscription()">
+        <button (click)="startTranscription(SpeechRecognitionType.WEB_SPEECH)">
             <img src="/assets/icons/w3c.svg" alt="W3C icon" class="button-icon" />
             <span>Web Speech API</span>
         </button>
-        <button (click)="speech.startCloudflareTranscription()">
+        <button (click)="startTranscription(SpeechRecognitionType.CLOUDFLARE)">
             <img src="/assets/icons/cloudflare.svg" alt="Cloudflare icon" class="button-icon" />
             <span>Cloudflare</span>
         </button>
@@ -22,7 +22,7 @@
         <div class="output-area" #outputArea>
             <pre>{{ state.debugOutput() }}</pre>
         </div>
-        <button (click)="speech.stopAndResetAll()" class="stop-button">Cancel & Go Back</button>
+        <button (click)="stopTranscription()" class="stop-button">Cancel & Go Back</button>
     } @else if (state.status() === AppStatus.TRANSCRIBING) {
         <h2>
             <img src="/assets/icons/microphone.svg" alt="Microphone on" class="mic-icon" />
@@ -36,9 +36,9 @@
                 {{ state.transcription() }}
             </pre>
         </div>
-        <button (click)="speech.stopAndResetAll()" class="stop-button">Stop</button>
+        <button (click)="stopTranscription()" class="stop-button">Stop</button>
     } @else {
         <h2>Unknown Error</h2>
-        <button (click)="speech.stopAndResetAll()" class="stop-button">Go Back</button>
+        <button (click)="stopTranscription()" class="stop-button">Go Back</button>
     }
 </main>
