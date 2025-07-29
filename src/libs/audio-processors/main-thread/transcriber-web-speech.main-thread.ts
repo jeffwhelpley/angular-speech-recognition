@@ -73,7 +73,9 @@ export class TranscriberWebSpeechMainThread implements Transcriber {
     }
 
     stop() {
+        console.log('Stopping Web Speech API...');
         this.webSpeechRecognition.stop();
         this.webSpeechRecognition = null;
+        console.log('Stopping Web Speech API...done');
     }
 }

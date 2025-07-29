@@ -1,10 +1,11 @@
-import { AudioToProcess, Transcriber } from '../../models';
+import { AudioToProcess, MessageFromWorkerType, Transcriber } from '../../models';
 
 class TranscriberCloudflareWorkerThread implements Transcriber {
-    async init() {}
+    async init() {
+        postMessage({ type: MessageFromWorkerType.LOG, text: `Cloudflare implementation not yet implemented.` });
+    }
 
     async processAudio(audio: AudioToProcess) {
-        console.log('Cloudflare not yet implemented');
         // const int16Audio = audioUtils.float32ToInt16(audioChunk); // Convert Float32Array to Int16Array (PCM 16-bit)
         // const wavBuffer = audioUtils.encodeWAV(int16Audio, AUDIO_SAMPLE_RATE); // encode as WAV
         // const wavUint8Array = new Uint8Array(wavBuffer); // Convert to Uint8Array for sending

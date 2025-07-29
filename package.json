@@ -9,7 +9,7 @@
         "test": "ng test",
         "update": "ng update @angular/cli @angular/core",
         "update.next": "ng update --next=true @angular/cli @angular/core",
-        "deploy": "wrangler pages deploy dist/angular-speech-recognition/browser/ --project-name angular-speech-recognition"
+        "deploy": "npm run build && wrangler pages deploy dist/angular-speech-recognition/browser/ --project-name angular-speech-recognition"
     },
     "private": true,
     "dependencies": {
