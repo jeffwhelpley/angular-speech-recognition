@@ -1,67 +1,79 @@
-import { Inject, Injectable } from '@angular/core';
+import { Injectable } from '@angular/core';
 import { AudioToProcess, Transcriber } from '../../models';
+import { BrowserAdapter } from '../../adapters';
+import { StateManager } from '../../managers';
 
 @Injectable()
 export class TranscriberWebSpeechMainThread implements Transcriber {
-    async init() {}
+    webSpeechRecognition: any = null;
+
+    constructor(
+        private browser: BrowserAdapter,
+        private state: StateManager
+    ) {}
+
+    async init() {
+        this.webSpeechRecognition = this.browser.getWebSpeechRecognition();
+        this.webSpeechRecognition.continuous = true;
+        this.webSpeechRecognition.interimResults = false; // Set to true to get partial results as they come in
+        this.webSpeechRecognition.lang = 'en-US'; // we will hard code to english for now
+
+        this.webSpeechRecognition.onerror = (event: any) => {
+            this.state.addDebugOutput(`Loading Web Speech API error: ${event.error}`);
+
+            if (event.error === 'not-allowed') {
+                console.error('Microphone access denied. Please allow microphone access for this page.');
+            } else if (event.error === 'no-speech') {
+                console.warn('No speech detected. Still listening...');
+            }
+        };
+
+        // Event handler for when speech recognition ends
+        this.webSpeechRecognition.onend = () => {
+            console.log('Speech recognition ended. Restarting...');
+            // Automatically restart recognition if it ends (e.g., due to silence timeout)
+            this.webSpeechRecognition.start();
+        };
+
+        this.webSpeechRecognition.onresult = (event: any) => {
+            let interimTranscript = '';
+            let finalTranscript = '';
+
+            // Loop through the results to distinguish final and interim
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                    finalTranscript += transcript;
+                } else {
+                    interimTranscript += transcript;
+                }
+            }
+
+            if (interimTranscript) {
+                console.log('INTERIM: ' + interimTranscript);
+            }
+
+            if (finalTranscript) {
+                this.state.addToTranscription(finalTranscript);
+            }
+        };
+
+        this.state.addDebugOutput(`Loading Web Speech API...`);
+        return new Promise<void>((resolve) => {
+            this.webSpeechRecognition.onstart = () => {
+                this.state.addDebugOutput(`Loading Web Speech API...done`);
+                resolve();
+            };
+            this.webSpeechRecognition.start();
+        });
+    }
+
     async processAudio(audio: AudioToProcess) {
-        // todo here
+        // for this transcriber, we don't process audio in chunks from the worker thread like the others
+    }
+
+    stop() {
+        this.webSpeechRecognition.stop();
+        this.webSpeechRecognition = null;
     }
 }
-
-// async startWebSpeechApiTranscription() {
-//     this.state.debugOutput.set('');
-//     this.state.type.set(SpeechRecognitionType.WEB_SPEECH);
-//     this.state.status.set(AppStatus.STARTING);
-
-//     this.addDebugOutput(`Checking Web Speech API availability...`);
-//     if (!this.browser.isWebSpeechAvailable()) {
-//         this.addDebugOutput('Web Speech API is not available in this browser.');
-//         return;
-//     }
-
-//     this.addDebugOutput(`Checking Web Speech API availability...done.`);
-
-//     // Get the correct SpeechRecognition object
-//     this.webSpeechRecognition = this.browser.getWebSpeechRecognition();
-
-//     this.webSpeechRecognition.continuous = true; // Keep listening
-//     this.webSpeechRecognition.interimResults = true; // Get results as they come
-//     this.webSpeechRecognition.lang = 'en-US'; // You can make this configurable
-
-//     this.addDebugOutput('Web Speech API configured. Starting recognition...');
-
-//     this.webSpeechRecognition.onstart = () => {
-//         this.addDebugOutput('Speech recognition service has started.');
-//         this.state.status.set(AppStatus.TRANSCRIBING);
-//     };
-
-//     this.webSpeechRecognition.onresult = (event: any) => {
-//         let interim_transcript = '';
-//         let final_transcript = '';
-
-//         for (let i = event.resultIndex; i < event.results.length; ++i) {
-//             if (event.results[i].isFinal) {
-//                 final_transcript += event.results[i][0].transcript;
-//             } else {
-//                 interim_transcript += event.results[i][0].transcript;
-//             }
-//         }
-
-//         this.addToTranscription(final_transcript);
-//     };
-
-//     this.webSpeechRecognition.onerror = (event: any) => {
-//         const errStr = `Web Speech API Error: ${event.error} - ${event.message}`;
-//         console.error(errStr);
-//         this.addDebugOutput(errStr);
-//     };
-
-//     this.webSpeechRecognition.onend = () => {
-//         this.addToTranscription('\n\n-- end of transcription --');
-//         // If continuous, it might stop. You might want to restart it here if state is still TRANSCRIBING
-//         // For now, we'll let stopAndResetAll handle full cleanup.
-//     };
-
-//     this.webSpeechRecognition.start();
-// }

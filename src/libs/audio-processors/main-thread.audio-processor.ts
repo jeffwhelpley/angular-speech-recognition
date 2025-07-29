@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { StateManager } from '../managers/state.manager';
 import { UserMediaAdapter } from '../adapters';
 import { AudioToProcess, MessageFromWorker, MessageFromWorkerType, MessageToWorkerType, SpeechRecognitionType } from '../models';
-import { TranscriberFactoryMainThread } from './main-thread';
+import { TranscriberChromeMainThread, TranscriberFactoryMainThread, TranscriberWebSpeechMainThread } from './main-thread';
 
 @Injectable()
 export class MainThreadAudioProcessor {
@@ -12,18 +12,33 @@ export class MainThreadAudioProcessor {
     constructor(
         private state: StateManager,
         private userMedia: UserMediaAdapter,
-        private transcriberFactory: TranscriberFactoryMainThread
+        private transcriberFactory: TranscriberFactoryMainThread,
+        private webSpeechTranscriber: TranscriberWebSpeechMainThread,
+        private chromeTranscriber: TranscriberChromeMainThread
     ) {}
 
     async startTranscription(speechRecognitionType: SpeechRecognitionType) {
-        this.ensureWorkerThreadCreated();
-        this.startWorkerThreadProcessingDaemon(speechRecognitionType);
-        this.startStreamingAudioFromUserMicToWorkerThread();
+        if (speechRecognitionType === SpeechRecognitionType.WEB_SPEECH) {
+            await this.webSpeechTranscriber.init();
+        } else {
+            this.ensureWorkerThreadCreated();
+            this.startWorkerThreadProcessingDaemon(speechRecognitionType);
+            this.startStreamingAudioFromUserMicToWorkerThread();
+        }
     }
 
     stopTranscription() {
+        if (this.speechRecognitionType === SpeechRecognitionType.WEB_SPEECH) {
+            this.webSpeechTranscriber.stop();
+            return;
+        }
+
         this.stopWorkerThreadProcessingDaemon();
         this.stopStreamingAudio();
+
+        if (this.speechRecognitionType === SpeechRecognitionType.CHROME) {
+            this.chromeTranscriber.stop();
+        }
     }
 
     ensureWorkerThreadCreated() {

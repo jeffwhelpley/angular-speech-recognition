@@ -1,6 +1,7 @@
 export interface Transcriber {
     init: () => Promise<void>;
     processAudio: (audio: AudioToProcess) => Promise<void>;
+    stop?: () => void;
 }
 
 export interface AudioToProcess {

@@ -6,6 +6,8 @@ import { TranscriberTransformersMainThread } from './transcriber-transformers.ma
 import { TranscriberWebSpeechMainThread } from './transcriber-web-speech.main-thread';
 
 export * from './transcriber-factory.main-thread';
+export * from './transcriber-web-speech.main-thread';
+export * from './transcriber-chrome.main-thread';
 
 export const MAIN_THREAD_TRANSCRIBER_PROVIDERS = [
     TranscriberChromeMainThread,

@@ -13,8 +13,10 @@ export class TranscriberChromeMainThread implements Transcriber {
     ) {}
 
     async init() {
-        await this.checkCompatibility();
-        await this.downloadModel();
+        if (!this.chromeAiSession) {
+            await this.checkCompatibility();
+            await this.downloadModel();
+        }
     }
 
     async processAudio(audio: AudioToProcess) {
@@ -42,6 +44,10 @@ export class TranscriberChromeMainThread implements Transcriber {
     }
 
     async downloadModel() {
+        if (this.chromeAiSession) {
+            return;
+        }
+
         this.state.addDebugOutput(`Starting to download Chrome Built-in AI model...`);
         const startTime = new Date().getTime();
         try {
@@ -53,5 +59,9 @@ export class TranscriberChromeMainThread implements Transcriber {
         const endTime = new Date().getTime();
         const duration = endTime - startTime;
         this.state.addDebugOutput(`Starting to download Chrome Built-in AI model...done in ${duration}ms`);
+    }
+
+    stop() {
+        this.chromeAiSession = null;
     }
 }

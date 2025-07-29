@@ -38,6 +38,8 @@ export class AppComponent {
     }
 
     startTranscription(speechRecognitionType: SpeechRecognitionType) {
+        this.state.debugOutput.set('');
+        this.state.transcription.set('');
         this.state.type.set(speechRecognitionType);
         this.state.status.set(AppStatus.STARTING);
 
